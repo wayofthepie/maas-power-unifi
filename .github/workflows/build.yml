@@ -44,16 +44,13 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: run cargo sort
         run: |
           cargo install cargo-sort
           cargo sort
-      - name: clippy lint
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features -- -D warnings
+          cargo clippy --all-features -- -D warnings
 
   coverage:
     runs-on: ubuntu-latest
