@@ -1,7 +1,10 @@
 on: push
 name: build
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
-  ci:
+  build:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -24,20 +27,49 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-      - name: run cargo sort
-        run: |
-          cargo install cargo-sort
-          cargo sort
       - name: compile
         uses: actions-rs/cargo@v1
         with:
           command: build
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
+
+  lint:
+    runs-on: ubuntu-latest
+    name: lint
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
         with:
-          version: "0.25.2"
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: run cargo sort
+        run: |
+          cargo install cargo-sort
+          cargo sort
       - name: clippy lint
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features -- -D warnings
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: coverage
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: cargo llvm-cov
+        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: true
