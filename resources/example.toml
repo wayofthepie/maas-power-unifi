@@ -1,0 +1,7 @@
+url = "https://localhost:8443"
+
+[[devices]]
+mac = "xx:xx:xx:xx:xx:xx"
+machines = [
+  { maas_id = "maas_id", port_id = 2 }
+]
