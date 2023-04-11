@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use hyper::{header::CONTENT_TYPE, Method};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -40,13 +39,16 @@ pub enum PoeMode {
     Off,
 }
 
-#[async_trait]
-trait UnifiClient {
-    async fn login<S: Into<String>>(&self, username: S, password: S) -> anyhow::Result<()>;
-    async fn devices(&self) -> anyhow::Result<UnifiResponse<Device>>;
+#[derive(Debug)]
+pub enum UnifiError {
+    MissingSystemId,
+    MachineNotFound(String),
+    DeviceListError(String),
+    FailedToConstructUrl(String),
+    DeviceNotFound(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Unifi {
     base_url: Url,
     client: Client,
@@ -66,17 +68,31 @@ impl Unifi {
             username: username.into(),
             password: password.into(),
         };
+        let auth_data_json = serde_json::to_string(&auth_data)?;
+        let url = self.base_url.join("/api/login")?;
         let response = self
             .client
-            .request(Method::POST, self.base_url.join("/api/login")?)
+            .request(Method::POST, url)
             .header(CONTENT_TYPE, "application/json")
-            .body(serde_json::to_string(&auth_data)?)
+            .body(auth_data_json)
             .send()
             .await?;
         Ok(response.error_for_status().map(|_| ())?)
     }
 
     pub async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>> {
+        let url = self.base_url.join("/api/s/default/stat/device")?;
+        let response = self
+            .client
+            .request(Method::GET, url)
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        Ok(response.json::<UnifiResponse<Vec<Device>>>().await?)
+    }
+
+    pub async fn power_status(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>> {
         let url = self.base_url.join("/api/s/default/stat/device")?;
         let response = self
             .client

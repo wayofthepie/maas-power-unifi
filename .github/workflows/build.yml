@@ -1,4 +1,6 @@
 on: push
+permissions:
+  contents: write
 name: build
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
