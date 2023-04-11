@@ -30,5 +30,9 @@ machines = [
 
 * `mac` address of the Unifi device
 * a list of `machines`
-  * `maas_id` is the ID of the machine in MaaS, this can be found in the URL on the machines page - e.g. /MAAS/r/machine/$id/summary - you can also get this with the cli `maas admin machines read | jq -r --arg hostname "brave-turkey" '.[] | select(.hostname == $hostname) | .system_id'`
+  * `maas_id` is the ID of the machine in MaaS, this can be found in the URL on the machines page - e.g. /MAAS/r/machine/$id/summary - you can also get this with the cli
+    ```
+    maas $PROFILE machines read \
+      | jq -r --arg hostname "brave-turkey" '.[] | select(.hostname == $hostname) | .system_id'
+    ```
   * `port_id` is the numeric ID of the port this machine is powered through in the Unifi device
