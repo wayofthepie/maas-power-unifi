@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+use dyn_clone::DynClone;
 use hyper::{header::CONTENT_TYPE, Method};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -48,6 +50,13 @@ pub enum UnifiError {
     DeviceNotFound(String),
 }
 
+#[async_trait]
+pub trait UnifiClient: DynClone {
+    async fn login(&self, username: &str, password: &str) -> anyhow::Result<()>;
+    async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>>;
+}
+dyn_clone::clone_trait_object!(UnifiClient);
+
 #[derive(Clone, Debug)]
 pub struct Unifi {
     base_url: Url,
@@ -62,8 +71,11 @@ impl Unifi {
             client,
         })
     }
+}
 
-    pub async fn login<S: Into<String>>(&self, username: S, password: S) -> anyhow::Result<()> {
+#[async_trait]
+impl UnifiClient for Unifi {
+    async fn login(&self, username: &str, password: &str) -> anyhow::Result<()> {
         let auth_data = AuthData {
             username: username.into(),
             password: password.into(),
@@ -80,19 +92,7 @@ impl Unifi {
         Ok(response.error_for_status().map(|_| ())?)
     }
 
-    pub async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>> {
-        let url = self.base_url.join("/api/s/default/stat/device")?;
-        let response = self
-            .client
-            .request(Method::GET, url)
-            .header(CONTENT_TYPE, "application/json")
-            .send()
-            .await?;
-        let response = response.error_for_status()?;
-        Ok(response.json::<UnifiResponse<Vec<Device>>>().await?)
-    }
-
-    pub async fn power_status(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>> {
+    async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<Device>>> {
         let url = self.base_url.join("/api/s/default/stat/device")?;
         let response = self
             .client
@@ -109,7 +109,7 @@ impl Unifi {
 mod test {
     use crate::unifi::{Device, UnifiResponse};
 
-    use super::Unifi;
+    use super::{Unifi, UnifiClient};
     use wiremock::{
         matchers::{method, path},
         Mock, MockServer, ResponseTemplate,

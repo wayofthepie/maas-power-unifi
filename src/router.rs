@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     config::Config,
-    unifi::{PoeMode, Unifi, UnifiError},
+    unifi::{PoeMode, UnifiClient, UnifiError},
 };
 use axum::{
     extract::FromRef,
@@ -19,11 +19,11 @@ use tracing::Span;
 #[derive(Clone)]
 pub struct AppState {
     pub config: &'static Config,
-    pub client: Unifi,
+    pub client: Box<dyn UnifiClient + Send + Sync>,
 }
 
-impl FromRef<AppState> for Unifi {
-    fn from_ref(state: &AppState) -> Unifi {
+impl FromRef<AppState> for Box<dyn UnifiClient> {
+    fn from_ref(state: &AppState) -> Box<dyn UnifiClient> {
         state.client.clone()
     }
 }
