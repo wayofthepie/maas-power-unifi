@@ -1,6 +1,9 @@
 use crate::{
     config::Config,
-    unifi::{PoeMode, UnifiClient, UnifiError},
+    unifi::{
+        client::{UnifiClient, UnifiError},
+        models::PoeMode,
+    },
 };
 use axum::{
     extract::FromRef,
@@ -126,7 +129,11 @@ mod test {
     use crate::{
         config::{self, Config, Machine},
         router::{routes, AppState, PowerStatus, MAAS_SYSTEM_ID_HEADER},
-        unifi::{self, Meta, PoeMode, Port, Unifi, UnifiClient, UnifiResponse},
+        unifi::{
+            self,
+            client::UnifiClient,
+            models::{Meta, PoeMode, Port, UnifiResponse},
+        },
     };
     use async_trait::async_trait;
     use http::{Method, Request};
@@ -143,13 +150,13 @@ mod test {
     #[async_trait]
     impl UnifiClient for FakeUnifi {
         async fn login(&self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
+            Ok(())
         }
 
-        async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<unifi::Device>>> {
+        async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<unifi::models::Device>>> {
             Ok(UnifiResponse {
                 meta: Meta { rc: "".to_owned() },
-                data: vec![unifi::Device {
+                data: vec![unifi::models::Device {
                     mac: UNIFI_DEVICE_MAC.to_owned(),
                     device_id: "".to_owned(),
                     port_table: vec![Port {
@@ -161,11 +168,17 @@ mod test {
         }
 
         async fn power_on(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
-            unimplemented!()
+            Ok(UnifiResponse {
+                data: (),
+                ..Default::default()
+            })
         }
 
         async fn power_off(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
-            unimplemented!()
+            Ok(UnifiResponse {
+                data: (),
+                ..Default::default()
+            })
         }
     }
 
@@ -196,4 +209,7 @@ mod test {
         assert_eq!(response.status(), 200);
         assert_eq!(power_status.status, "running");
     }
+
+    #[tokio::test]
+    async fn should_power_on() {}
 }

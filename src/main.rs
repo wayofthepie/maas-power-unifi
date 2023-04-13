@@ -8,7 +8,7 @@ use clap::Parser;
 use config::read_config_file;
 use reqwest::Client;
 use router::{routes, AppState};
-use unifi::{Unifi, UnifiClient};
+use unifi::{client::UnifiClient, self_hosted::UnifiSelfHostedClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         .cookie_store(true)
         .danger_accept_invalid_certs(true)
         .build()?;
-    let client = Box::new(Unifi::new(&config.url, http_client)?);
+    let client = Box::new(UnifiSelfHostedClient::new(&config.url, http_client)?);
     let username = std::env::var("UNIFI_USERNAME").unwrap();
     let password = std::env::var("UNIFI_PASSWORD").unwrap();
     client.login(&username, &password).await?;
