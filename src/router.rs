@@ -94,11 +94,7 @@ async fn power_status(
         .to_str()
         .unwrap();
     for managed_device in config.devices.iter() {
-        if let Some(machine) = managed_device
-            .machines
-            .iter()
-            .find(|machine| machine.maas_id == system_id)
-        {
+        if let Some(machine) = config.machine(system_id) {
             let response = client
                 .devices()
                 .await
