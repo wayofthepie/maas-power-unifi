@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use dyn_clone::DynClone;
 
-
-
 use super::models::{Device, UnifiResponse};
 
 #[derive(Debug)]
