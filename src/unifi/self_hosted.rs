@@ -1,25 +1,17 @@
 use super::{
     client::UnifiClient,
-    models::{AuthData, Device, UnifiResponse},
+    models::{AuthData, Device, PoeMode, UnifiResponse},
 };
 use async_trait::async_trait;
 use hyper::{header::CONTENT_TYPE, Method};
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
+
 use serde_json::json;
 
 #[derive(Clone, Debug)]
 pub struct UnifiSelfHostedClient {
     base_url: Url,
     client: Client,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum PowerState {
-    #[serde(rename = "auto")]
-    On,
-    Off,
 }
 
 impl UnifiSelfHostedClient {
@@ -33,14 +25,14 @@ impl UnifiSelfHostedClient {
 
     async fn power(
         &self,
-        state: PowerState,
+        poe_mode: PoeMode,
         device_id: &str,
         port_number: usize,
     ) -> anyhow::Result<UnifiResponse<()>> {
         let url = self.base_url.join("/api/s/default/rest/device/")?;
         let url = url.join(device_id)?;
         let body = serde_json::to_string(
-            &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":state}]}),
+            &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":poe_mode}]}),
         )?;
         let response = self
             .client
@@ -90,7 +82,7 @@ impl UnifiClient for UnifiSelfHostedClient {
         device_id: &str,
         port_number: usize,
     ) -> anyhow::Result<UnifiResponse<()>> {
-        self.power(PowerState::On, device_id, port_number).await
+        self.power(PoeMode::Auto, device_id, port_number).await
     }
 
     async fn power_off(
@@ -98,13 +90,13 @@ impl UnifiClient for UnifiSelfHostedClient {
         device_id: &str,
         port_number: usize,
     ) -> anyhow::Result<UnifiResponse<()>> {
-        self.power(PowerState::Off, device_id, port_number).await
+        self.power(PoeMode::Off, device_id, port_number).await
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::unifi::models::Meta;
+    use crate::unifi::models::{Meta, PoeMode};
 
     use super::{Device, UnifiClient, UnifiResponse, UnifiSelfHostedClient};
     use serde_json::json;
@@ -168,7 +160,7 @@ mod test {
                 UNIFI_DEVICE_ID
             )))
             .and(body_json(
-                json!({"port_overrides":[{"port_idx":port_number,"poe_mode":"auto"}]}),
+                json!({"port_overrides":[{"port_idx":port_number,"poe_mode":PoeMode::Auto}]}),
             ))
             .respond_with(ResponseTemplate::new(200).set_body_json(response))
             .mount(&mock_server)
@@ -197,7 +189,7 @@ mod test {
                 UNIFI_DEVICE_ID
             )))
             .and(body_json(
-                json!({"port_overrides":[{"port_idx":port_number,"poe_mode":"off"}]}),
+                json!({"port_overrides":[{"port_idx":port_number,"poe_mode":PoeMode::Off}]}),
             ))
             .respond_with(ResponseTemplate::new(200).set_body_json(response))
             .mount(&mock_server)
