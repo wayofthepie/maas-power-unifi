@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     config::Config,
     unifi::{PoeMode, UnifiClient, UnifiError},
@@ -13,8 +11,8 @@ use axum::{
 use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tower_http::trace::TraceLayer;
-use tracing::Span;
+
+const MAAS_SYSTEM_ID_HEADER: &str = "system_id";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -70,14 +68,8 @@ impl IntoResponse for AppError {
 
 pub fn routes(state: AppState) -> Router {
     Router::new()
-        .route("/", get(power_status))
+        .route("/power-status", get(power_status))
         .layer(Extension(state))
-        .layer(TraceLayer::new_for_http().on_response(
-            |response: &Response, _latency: Duration, span: &Span| {
-                span.record("status_code", &tracing::field::display(response.status()));
-                tracing::debug!("{response:?}");
-            },
-        ))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -90,7 +82,7 @@ async fn power_status(
     headers: HeaderMap,
 ) -> Result<Json<PowerStatus>, AppError> {
     let system_id = headers
-        .get("system_id")
+        .get(MAAS_SYSTEM_ID_HEADER)
         .ok_or(UnifiError::MissingSystemId)?
         .to_str()
         .unwrap();
@@ -124,4 +116,73 @@ async fn power_status(
     }
 
     Err(UnifiError::DeviceNotFound("".to_owned()).into())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        config::{self, Config, Machine},
+        router::{routes, AppState, PowerStatus, MAAS_SYSTEM_ID_HEADER},
+        unifi::{self, Meta, PoeMode, Port, UnifiClient, UnifiResponse},
+    };
+    use async_trait::async_trait;
+    use http::{Method, Request};
+    use hyper::{body, Body};
+    use tower::ServiceExt;
+
+    const UNIFI_DEVICE_MAC: &str = "00-00-00-00-00-00";
+    const MAAS_SYSTEM_ID: &str = "system-id";
+    const MACHINE_PORT: usize = 1;
+
+    #[derive(Clone)]
+    struct FakeUnifi {}
+
+    #[async_trait]
+    impl UnifiClient for FakeUnifi {
+        async fn login(&self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+
+        async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<unifi::Device>>> {
+            Ok(UnifiResponse {
+                meta: Meta { rc: "".to_owned() },
+                data: vec![unifi::Device {
+                    mac: UNIFI_DEVICE_MAC.to_owned(),
+                    device_id: "".to_owned(),
+                    port_table: vec![Port {
+                        port_idx: MACHINE_PORT,
+                        poe_mode: Some(PoeMode::Auto),
+                    }],
+                }],
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn should_get_power_status() {
+        let config = Box::leak(Box::new(Config {
+            url: "".to_owned(),
+            devices: vec![config::Device {
+                mac: UNIFI_DEVICE_MAC.to_owned(),
+                machines: vec![Machine {
+                    maas_id: MAAS_SYSTEM_ID.to_owned(),
+                    port_id: MACHINE_PORT,
+                }],
+            }],
+        }));
+        let client = Box::new(FakeUnifi {});
+        let state = AppState { config, client };
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/power-status")
+            .header(MAAS_SYSTEM_ID_HEADER, MAAS_SYSTEM_ID)
+            .body(Body::empty())
+            .unwrap();
+        let mut response = routes(state).oneshot(request).await.unwrap();
+        let body = response.body_mut();
+        let power_status =
+            serde_json::from_slice::<PowerStatus>(&body::to_bytes(body).await.unwrap()).unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(power_status.status, "running");
+    }
 }
