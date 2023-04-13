@@ -27,36 +27,40 @@ impl FromRef<AppState> for Box<dyn UnifiClient> {
 }
 
 enum AppError {
-    PowerOn(UnifiError),
+    Power(UnifiError),
 }
 
 impl From<UnifiError> for AppError {
     fn from(inner: UnifiError) -> Self {
-        AppError::PowerOn(inner)
+        AppError::Power(inner)
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::PowerOn(UnifiError::DeviceListError(s)) => (
+            AppError::Power(UnifiError::DeviceListError(s)) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to list devices, error: {s}"),
             ),
-            AppError::PowerOn(UnifiError::FailedToConstructUrl(s)) => {
+            AppError::Power(UnifiError::FailedToConstructUrl(s)) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, s)
             }
-            AppError::PowerOn(UnifiError::MissingSystemId) => (
+            AppError::Power(UnifiError::MissingSystemId) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "System ID was not found in MaaS request.".to_owned(),
             ),
-            AppError::PowerOn(UnifiError::DeviceNotFound(mac)) => (
+            AppError::Power(UnifiError::DeviceNotFound(mac)) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Device with mac address {mac} was not found!"),
             ),
-            AppError::PowerOn(UnifiError::MachineNotFound(system_id)) => (
+            AppError::Power(UnifiError::MachineNotFound(system_id)) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Machine with system id {system_id} was not found!"),
+            ),
+            AppError::Power(UnifiError::MachinePortIdIncorrect(port_id)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Found no machine on port {port_id}!"),
             ),
         };
         let body = Json(json!({
@@ -86,7 +90,6 @@ async fn power_status(
         .ok_or(UnifiError::MissingSystemId)?
         .to_str()
         .unwrap();
-
     for managed_device in config.devices.iter() {
         if let Some(machine) = managed_device
             .machines
@@ -106,7 +109,7 @@ async fn power_status(
                 .port_table
                 .iter()
                 .find(|port| port.port_idx == machine.port_id)
-                .unwrap();
+                .ok_or(UnifiError::MachinePortIdIncorrect(machine.port_id))?;
             if let Some(PoeMode::Auto) = port.poe_mode {
                 return Ok(Json(PowerStatus {
                     status: "running".to_owned(),

@@ -48,6 +48,7 @@ pub enum UnifiError {
     DeviceListError(String),
     FailedToConstructUrl(String),
     DeviceNotFound(String),
+    MachinePortIdIncorrect(usize),
 }
 
 #[async_trait]
