@@ -126,7 +126,7 @@ mod test {
     use crate::{
         config::{self, Config, Machine},
         router::{routes, AppState, PowerStatus, MAAS_SYSTEM_ID_HEADER},
-        unifi::{self, Meta, PoeMode, Port, UnifiClient, UnifiResponse},
+        unifi::{self, Meta, PoeMode, Port, Unifi, UnifiClient, UnifiResponse},
     };
     use async_trait::async_trait;
     use http::{Method, Request};
@@ -158,6 +158,14 @@ mod test {
                     }],
                 }],
             })
+        }
+
+        async fn power_on(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
+            unimplemented!()
+        }
+
+        async fn power_off(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
+            unimplemented!()
         }
     }
 
