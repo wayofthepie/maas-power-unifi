@@ -363,6 +363,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dyn-clone"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68b0cf012f1230e43cd00ebb729c6bb58707ecfa8ad08b52ef3a4ccd2697fc30"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -862,6 +868,7 @@ dependencies = [
  "async-trait",
  "axum",
  "clap",
+ "dyn-clone",
  "http",
  "hyper",
  "reqwest",
@@ -869,6 +876,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
