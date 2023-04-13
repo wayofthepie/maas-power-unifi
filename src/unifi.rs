@@ -107,9 +107,8 @@ impl UnifiClient for Unifi {
 
 #[cfg(test)]
 mod test {
-    use crate::unifi::{Device, UnifiResponse};
-
     use super::{Unifi, UnifiClient};
+    use crate::unifi::{Device, UnifiResponse};
     use wiremock::{
         matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
