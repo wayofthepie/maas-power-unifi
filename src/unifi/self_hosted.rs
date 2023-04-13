@@ -1,12 +1,11 @@
-use async_trait::async_trait;
-use hyper::{header::CONTENT_TYPE, Method};
-use reqwest::{Client, Url};
-use serde_json::json;
-
 use super::{
     client::UnifiClient,
     models::{AuthData, Device, UnifiResponse},
 };
+use async_trait::async_trait;
+use hyper::{header::CONTENT_TYPE, Method};
+use reqwest::{Client, Url};
+use serde_json::json;
 
 #[derive(Clone, Debug)]
 pub struct UnifiSelfHostedClient {
