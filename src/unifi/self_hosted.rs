@@ -5,6 +5,7 @@ use super::{
 use async_trait::async_trait;
 use hyper::{header::CONTENT_TYPE, Method};
 use reqwest::{Client, Url};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Clone, Debug)]
@@ -13,12 +14,45 @@ pub struct UnifiSelfHostedClient {
     client: Client,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum PowerState {
+    #[serde(rename = "auto")]
+    On,
+    Off,
+}
+
 impl UnifiSelfHostedClient {
     pub fn new<S: AsRef<str>>(base_url: S, client: Client) -> anyhow::Result<Self> {
         let url = Url::parse(base_url.as_ref())?;
         Ok(Self {
             base_url: url,
             client,
+        })
+    }
+
+    async fn power(
+        &self,
+        state: PowerState,
+        device_id: &str,
+        port_number: usize,
+    ) -> anyhow::Result<UnifiResponse<()>> {
+        let url = self.base_url.join("/api/s/default/rest/device/")?;
+        let url = url.join(device_id)?;
+        let body = serde_json::to_string(
+            &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":state}]}),
+        )?;
+        let response = self
+            .client
+            .request(Method::POST, url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await?;
+        response.error_for_status()?;
+        Ok(UnifiResponse {
+            data: (),
+            ..Default::default()
         })
     }
 }
@@ -56,23 +90,7 @@ impl UnifiClient for UnifiSelfHostedClient {
         device_id: &str,
         port_number: usize,
     ) -> anyhow::Result<UnifiResponse<()>> {
-        let url = self.base_url.join("/api/s/default/rest/device/")?;
-        let url = url.join(device_id)?;
-        let body = serde_json::to_string(
-            &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":"auto"}]}),
-        )?;
-        let response = self
-            .client
-            .request(Method::POST, url)
-            .header(CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .await?;
-        response.error_for_status()?;
-        Ok(UnifiResponse {
-            data: (),
-            ..Default::default()
-        })
+        self.power(PowerState::On, device_id, port_number).await
     }
 
     async fn power_off(
@@ -80,23 +98,7 @@ impl UnifiClient for UnifiSelfHostedClient {
         device_id: &str,
         port_number: usize,
     ) -> anyhow::Result<UnifiResponse<()>> {
-        let url = self.base_url.join("/api/s/default/rest/device/")?;
-        let url = url.join(device_id)?;
-        let body = serde_json::to_string(
-            &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":"off"}]}),
-        )?;
-        let response = self
-            .client
-            .request(Method::POST, url)
-            .header(CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .await?;
-        response.error_for_status()?;
-        Ok(UnifiResponse {
-            data: (),
-            ..Default::default()
-        })
+        self.power(PowerState::Off, device_id, port_number).await
     }
 }
 
