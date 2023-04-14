@@ -1,7 +1,7 @@
 url = "https://localhost:8443"
 
 [[devices]]
-mac = "xx:xx:xx:xx:xx:xx"
+mac = "00:00:00:00:00:00"
 machines = [
   { maas_id = "maas_id", port_id = 2 }
 ]

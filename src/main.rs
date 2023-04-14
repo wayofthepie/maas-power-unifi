@@ -8,14 +8,17 @@ use clap::Parser;
 use config::read_config_file;
 use reqwest::Client;
 use router::{routes, AppState};
-use unifi::{client::UnifiClient, self_hosted::UnifiSelfHostedClient};
+use tracing::Level;
+use tracing_subscriber::{filter, prelude::*};
+use unifi::{client::UnifiClient, handler::UnifiHandler, self_hosted::UnifiSelfHostedClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+    let filter = filter::Targets::new().with_target("maas_power_unifi", Level::DEBUG);
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
         .init();
-
     let args = Args::parse();
     let config = &*Box::leak(Box::new(read_config_file(args.config_file).await?));
     let http_client = Client::builder()
@@ -26,7 +29,8 @@ async fn main() -> anyhow::Result<()> {
     let username = std::env::var("UNIFI_USERNAME").unwrap();
     let password = std::env::var("UNIFI_PASSWORD").unwrap();
     client.login(&username, &password).await?;
-    let state = AppState { config, client };
+    let handler = UnifiHandler { client };
+    let state = AppState { config, handler };
     let app = routes(state);
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())

@@ -1,31 +1,27 @@
 use crate::{
     config::Config,
-    unifi::{
-        client::{UnifiClient, UnifiError},
-        models::PoeMode,
-    },
+    unifi::{client::UnifiError, handler::UnifiHandler, models::PowerStatus},
 };
+use async_trait::async_trait;
 use axum::{
-    extract::FromRef,
+    extract::{FromRef, FromRequestParts},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Extension, Json, Router,
 };
-use http::{HeaderMap, StatusCode};
-use serde::{Deserialize, Serialize};
+use http::{request::Parts, StatusCode};
 use serde_json::json;
-
-const MAAS_SYSTEM_ID_HEADER: &str = "system_id";
+use tracing::instrument;
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: &'static Config,
-    pub client: Box<dyn UnifiClient + Send + Sync>,
+    pub handler: UnifiHandler,
 }
 
-impl FromRef<AppState> for Box<dyn UnifiClient> {
-    fn from_ref(state: &AppState) -> Box<dyn UnifiClient> {
-        state.client.clone()
+impl FromRef<AppState> for UnifiHandler {
+    fn from_ref(state: &AppState) -> UnifiHandler {
+        state.handler.clone()
     }
 }
 
@@ -65,6 +61,14 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Found no machine on port {port_id}!"),
             ),
+            AppError::Power(UnifiError::FailedToPowerOn(device_id)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to power on a port on the device {device_id}!"),
+            ),
+            AppError::Power(UnifiError::FailedToConvertSystemId(error)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to convert system_id to string: {error}"),
+            ),
         };
         let body = Json(json!({
             "error": error_message,
@@ -73,70 +77,108 @@ impl IntoResponse for AppError {
     }
 }
 
+const SYSTEM_ID: &str = "system_id";
+
+struct ExtractSystemId(String);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ExtractSystemId
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        if let Some(system_id) = parts.headers.get(SYSTEM_ID) {
+            let system_id = system_id.to_str().map_err(|_e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Failed to convert system_id header to a string!",
+                )
+            })?;
+            Ok(ExtractSystemId(system_id.to_owned()))
+        } else {
+            Err((StatusCode::BAD_REQUEST, "`system_id` header is missing"))
+        }
+    }
+}
+
 pub fn routes(state: AppState) -> Router {
     Router::new()
         .route("/power-status", get(power_status))
+        .route("/power-on", post(power_on))
+        .route("/power-off", post(power_off))
         .layer(Extension(state))
 }
 
-#[derive(Serialize, Deserialize)]
-struct PowerStatus {
-    status: String,
+#[instrument(skip(handler))]
+async fn power_status(
+    Extension(AppState { config, handler }): Extension<AppState>,
+    ExtractSystemId(system_id): ExtractSystemId,
+) -> Result<Json<PowerStatus>, AppError> {
+    let mac = config
+        .owning_device_mac(&system_id)
+        .ok_or(UnifiError::DeviceNotFound(system_id.to_owned()))?;
+    let machine = config
+        .machine(&system_id)
+        .ok_or(UnifiError::MachineNotFound(system_id.to_string()))?;
+    let device_id = handler.device_id(&mac).await?;
+    let device = handler.device(&device_id).await?;
+    device
+        .power_status(machine.port_id)
+        .map(Json)
+        .ok_or(UnifiError::DeviceNotFound("".to_owned()).into())
 }
 
-async fn power_status(
-    Extension(AppState { config, client }): Extension<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<PowerStatus>, AppError> {
-    let system_id = headers
-        .get(MAAS_SYSTEM_ID_HEADER)
-        .ok_or(UnifiError::MissingSystemId)?
-        .to_str()
-        .unwrap();
-    for managed_device in config.devices.iter() {
-        if let Some(machine) = config.machine(system_id) {
-            let response = client
-                .devices()
-                .await
-                .map_err(|e| UnifiError::DeviceListError(e.to_string()))?;
-            let device = response
-                .data
-                .iter()
-                .find(|device| device.mac == managed_device.mac)
-                .ok_or(UnifiError::DeviceNotFound(managed_device.mac.to_owned()))?;
-            let port = device
-                .port_table
-                .iter()
-                .find(|port| port.port_idx == machine.port_id)
-                .ok_or(UnifiError::MachinePortIdIncorrect(machine.port_id))?;
-            if let Some(PoeMode::Auto) = port.poe_mode {
-                return Ok(Json(PowerStatus {
-                    status: "running".to_owned(),
-                }));
-            }
-        }
-    }
+async fn power_on(
+    Extension(AppState { config, handler }): Extension<AppState>,
+    ExtractSystemId(system_id): ExtractSystemId,
+) -> Result<(), AppError> {
+    let mac = config
+        .owning_device_mac(&system_id)
+        .ok_or(UnifiError::DeviceNotFound(system_id.to_owned()))?;
+    let machine = config
+        .machine(&system_id)
+        .ok_or(UnifiError::MachineNotFound(system_id.to_string()))?;
+    let device_id = handler.device_id(&mac).await?;
+    Ok(handler.power_on(&device_id, machine.port_id).await?)
+}
 
-    Err(UnifiError::DeviceNotFound("".to_owned()).into())
+async fn power_off(
+    Extension(AppState { config, handler }): Extension<AppState>,
+    ExtractSystemId(system_id): ExtractSystemId,
+) -> Result<(), AppError> {
+    let mac = config
+        .owning_device_mac(&system_id)
+        .ok_or(UnifiError::DeviceNotFound(system_id.to_owned()))?;
+    let machine = config
+        .machine(&system_id)
+        .ok_or(UnifiError::MachineNotFound(system_id.to_string()))?;
+    let device_id = handler.device_id(&mac).await?;
+    Ok(handler.power_off(&device_id, machine.port_id).await?)
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
         config::{self, Config, Machine},
-        router::{routes, AppState, PowerStatus, MAAS_SYSTEM_ID_HEADER},
+        router::{routes, AppState, PowerStatus},
         unifi::{
             self,
             client::UnifiClient,
-            models::{Meta, PoeMode, Port, UnifiResponse},
+            handler::UnifiHandler,
+            models::{DeviceId, Meta, PoeMode, Port, UnifiResponse},
         },
     };
     use async_trait::async_trait;
     use http::{Method, Request};
     use hyper::{body, Body};
+    use mac_address::MacAddress;
+    use std::str::FromStr;
     use tower::ServiceExt;
 
     const UNIFI_DEVICE_MAC: &str = "00-00-00-00-00-00";
+    const MAAS_SYSTEM_ID_HEADER: &str = "system_id";
     const MAAS_SYSTEM_ID: &str = "system-id";
     const MACHINE_PORT: usize = 1;
 
@@ -153,8 +195,8 @@ mod test {
             Ok(UnifiResponse {
                 meta: Meta { rc: "".to_owned() },
                 data: vec![unifi::models::Device {
-                    mac: UNIFI_DEVICE_MAC.to_owned(),
-                    device_id: "".to_owned(),
+                    mac: MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap(),
+                    device_id: DeviceId::new(MAAS_SYSTEM_ID),
                     port_table: vec![Port {
                         port_idx: MACHINE_PORT,
                         poe_mode: Some(PoeMode::Auto),
@@ -183,7 +225,7 @@ mod test {
         let config = Box::leak(Box::new(Config {
             url: "".to_owned(),
             devices: vec![config::Device {
-                mac: UNIFI_DEVICE_MAC.to_owned(),
+                mac: MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap(),
                 machines: vec![Machine {
                     maas_id: MAAS_SYSTEM_ID.to_owned(),
                     port_id: MACHINE_PORT,
@@ -191,7 +233,8 @@ mod test {
             }],
         }));
         let client = Box::new(FakeUnifi {});
-        let state = AppState { config, client };
+        let handler = UnifiHandler { client };
+        let state = AppState { config, handler };
         let request = Request::builder()
             .method(Method::GET)
             .uri("/power-status")
@@ -207,5 +250,52 @@ mod test {
     }
 
     #[tokio::test]
-    async fn should_power_on() {}
+    async fn should_power_on() {
+        let config = Box::leak(Box::new(Config {
+            url: "".to_owned(),
+            devices: vec![config::Device {
+                mac: MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap(),
+                machines: vec![Machine {
+                    maas_id: MAAS_SYSTEM_ID.to_owned(),
+                    port_id: MACHINE_PORT,
+                }],
+            }],
+        }));
+        let client = Box::new(FakeUnifi {});
+        let handler = UnifiHandler { client };
+        let state = AppState { config, handler };
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/power-on")
+            .header(MAAS_SYSTEM_ID_HEADER, MAAS_SYSTEM_ID)
+            .body(Body::empty())
+            .unwrap();
+        let response = routes(state).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn should_power_off() {
+        let config = Box::leak(Box::new(Config {
+            url: "".to_owned(),
+            devices: vec![config::Device {
+                mac: MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap(),
+                machines: vec![Machine {
+                    maas_id: MAAS_SYSTEM_ID.to_owned(),
+                    port_id: MACHINE_PORT,
+                }],
+            }],
+        }));
+        let client = Box::new(FakeUnifi {});
+        let handler = UnifiHandler { client };
+        let state = AppState { config, handler };
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/power-off")
+            .header(MAAS_SYSTEM_ID_HEADER, MAAS_SYSTEM_ID)
+            .body(Body::empty())
+            .unwrap();
+        let response = routes(state).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
 }
