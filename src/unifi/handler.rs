@@ -1,9 +1,8 @@
-use mac_address::MacAddress;
-
 use super::{
     client::{UnifiClient, UnifiError},
     models::{Device, DeviceId},
 };
+use mac_address::MacAddress;
 
 #[derive(Clone)]
 pub struct UnifiHandler {
@@ -11,6 +10,14 @@ pub struct UnifiHandler {
 }
 
 impl UnifiHandler {
+    pub async fn power_on(&self, device_id: &DeviceId, port_id: usize) -> Result<(), UnifiError> {
+        self.client
+            .power_on(&device_id.to_string(), port_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| UnifiError::FailedToPowerOn(e.to_string()))
+    }
+
     // Given a device mac, return the ID in the unifi controller
     pub async fn device_id(&self, device_mac: &MacAddress) -> Result<DeviceId, UnifiError> {
         let response = self
@@ -33,10 +40,7 @@ impl UnifiHandler {
             .map_err(|e| UnifiError::DeviceListError(e.to_string()))?
             .data
             .into_iter()
-            .find(|device| {
-                println!("{:?}", device);
-                device.device_id == *device_id
-            })
+            .find(|device| device.device_id == *device_id)
             .ok_or(UnifiError::DeviceNotFound(device_id.to_string()))
     }
 }
@@ -54,11 +58,13 @@ mod test {
 
     const UNIFI_DEVICE_MAC: [u8; 6] = [00, 00, 00, 00, 00, 00];
     const UNIFI_DEVICE_ID: &str = "device-id";
-    const MAAS_SYSTEM_ID: &str = "system-id";
     const MACHINE_PORT: usize = 1;
 
     #[derive(Clone)]
     struct FakeUnifiClient {}
+
+    #[derive(Clone)]
+    struct FailingUnifiClient {}
 
     #[async_trait]
     impl UnifiClient for FakeUnifiClient {
@@ -95,6 +101,35 @@ mod test {
         }
     }
 
+    #[async_trait]
+    impl UnifiClient for FailingUnifiClient {
+        async fn login(&self, _: &str, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn devices(&self) -> anyhow::Result<UnifiResponse<Vec<unifi::models::Device>>> {
+            Ok(UnifiResponse {
+                meta: Meta { rc: "".to_owned() },
+                data: vec![unifi::models::Device {
+                    mac: MacAddress::from(UNIFI_DEVICE_MAC),
+                    device_id: DeviceId::new(UNIFI_DEVICE_ID),
+                    port_table: vec![Port {
+                        port_idx: MACHINE_PORT,
+                        poe_mode: Some(PoeMode::Auto),
+                    }],
+                }],
+            })
+        }
+
+        async fn power_on(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
+            Err(anyhow::anyhow!("failed"))
+        }
+
+        async fn power_off(&self, _: &str, _: usize) -> anyhow::Result<UnifiResponse<()>> {
+            Err(anyhow::anyhow!("failed"))
+        }
+    }
+
     #[tokio::test]
     async fn should_get_device_id() {
         let client = Box::new(FakeUnifiClient {});
@@ -115,5 +150,25 @@ mod test {
             .await
             .unwrap();
         assert_eq!(device.device_id, DeviceId::new(UNIFI_DEVICE_ID));
+    }
+
+    #[tokio::test]
+    async fn should_power_on() {
+        let client = Box::new(FakeUnifiClient {});
+        let handler = UnifiHandler { client };
+        handler
+            .power_on(&DeviceId::new(UNIFI_DEVICE_ID), MACHINE_PORT)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_error_if_power_on_fails() {
+        let client = Box::new(FailingUnifiClient {});
+        let handler = UnifiHandler { client };
+        let result = handler
+            .power_on(&DeviceId::new(UNIFI_DEVICE_ID), MACHINE_PORT)
+            .await;
+        assert!(result.is_err());
     }
 }

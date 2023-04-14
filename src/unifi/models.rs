@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
 
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};

@@ -11,6 +11,7 @@ pub enum UnifiError {
     DeviceNotFound(String),
     MachinePortIdIncorrect(usize),
     FailedToPowerOn(String),
+    FailedToConvertSystemId(String),
 }
 
 #[async_trait]

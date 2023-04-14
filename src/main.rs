@@ -19,7 +19,6 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .with(filter)
         .init();
-
     let args = Args::parse();
     let config = &*Box::leak(Box::new(read_config_file(args.config_file).await?));
     let http_client = Client::builder()

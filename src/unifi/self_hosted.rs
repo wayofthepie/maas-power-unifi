@@ -33,9 +33,10 @@ impl UnifiSelfHostedClient {
         let body = serde_json::to_string(
             &json!({"port_overrides":[{"port_idx":port_number,"poe_mode":poe_mode}]}),
         )?;
+        tracing::debug!("posting {}", body);
         let response = self
             .client
-            .request(Method::POST, url)
+            .request(Method::PUT, url)
             .header(CONTENT_TYPE, "application/json")
             .body(body)
             .send()
@@ -153,7 +154,7 @@ mod test {
             },
             ..Default::default()
         };
-        Mock::given(method("POST"))
+        Mock::given(method("PUT"))
             .and(path(format!(
                 "/api/s/default/rest/device/{}",
                 UNIFI_DEVICE_ID
@@ -182,7 +183,7 @@ mod test {
             },
             ..Default::default()
         };
-        Mock::given(method("POST"))
+        Mock::given(method("PUT"))
             .and(path(format!(
                 "/api/s/default/rest/device/{}",
                 UNIFI_DEVICE_ID
