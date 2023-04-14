@@ -14,9 +14,7 @@ use unifi::{client::UnifiClient, handler::UnifiHandler, self_hosted::UnifiSelfHo
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let filter = filter::Targets::new()
-        // Enable the `INFO` level for anything in `my_crate`
-        .with_target("maas_power_unifi", Level::DEBUG);
+    let filter = filter::Targets::new().with_target("maas_power_unifi", Level::DEBUG);
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(filter)
