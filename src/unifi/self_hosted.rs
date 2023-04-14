@@ -5,7 +5,6 @@ use super::{
 use async_trait::async_trait;
 use hyper::{header::CONTENT_TYPE, Method};
 use reqwest::{Client, Url};
-
 use serde_json::json;
 
 #[derive(Clone, Debug)]

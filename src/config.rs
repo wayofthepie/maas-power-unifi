@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -10,7 +11,7 @@ pub struct Config {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Device {
-    pub mac: String,
+    pub mac: MacAddress,
     pub machines: Vec<Machine>,
 }
 
@@ -23,14 +24,14 @@ pub struct Machine {
 impl Config {
     /// Given the ID of a machine in MaaS, returns the MAC address of the associated
     /// unifi device that manages it.
-    pub fn owning_device_mac(&self, maas_id: &str) -> Option<String> {
+    pub fn owning_device_mac(&self, maas_id: &str) -> Option<MacAddress> {
         let maybe_device = self.devices.iter().find(|device| {
             device
                 .machines
                 .iter()
                 .any(|machine| machine.maas_id == maas_id)
         });
-        maybe_device.map(|device| device.mac.clone())
+        maybe_device.map(|device| device.mac)
     }
 
     /// Gets the machine that corresponds to the given MaaS system ID.
@@ -56,14 +57,16 @@ pub async fn read_config_file(config_file: PathBuf) -> anyhow::Result<Config> {
 
 #[cfg(test)]
 mod test {
+    use mac_address::MacAddress;
+
     use crate::config::Machine;
 
     use super::read_config_file;
-    use std::path::PathBuf;
+    use std::{path::PathBuf, str::FromStr};
 
     const MAAS_ID: &str = "maas_id";
     const PORT_ID: usize = 2;
-    const UNIFI_DEVICE_MAC: &str = "xx:xx:xx:xx:xx:xx";
+    const UNIFI_DEVICE_MAC: &str = "00:00:00:00:00:00";
 
     #[tokio::test]
     async fn should_return_mac_addr_of_unifi_device() {
@@ -71,7 +74,10 @@ mod test {
         config_path.push("resources/example.toml");
         let config = read_config_file(config_path).await.unwrap();
         assert!(config.owning_device_mac(MAAS_ID).is_some());
-        assert_eq!(config.owning_device_mac(MAAS_ID).unwrap(), UNIFI_DEVICE_MAC);
+        assert_eq!(
+            config.owning_device_mac(MAAS_ID).unwrap(),
+            MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap()
+        );
     }
 
     #[tokio::test]
