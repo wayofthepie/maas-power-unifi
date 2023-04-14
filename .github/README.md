@@ -13,6 +13,12 @@ Options:
   -V, --version                    Print version
 ```
 
+There are three endpoints:
+
+* `/power-status` - the "URI to power on the node"
+* `/power-on` - the "URI to power off the node"
+* `/power-off` - the "URI to query the nodes power status"
+
 ## Configuration
 
 The config file looks as follows:
