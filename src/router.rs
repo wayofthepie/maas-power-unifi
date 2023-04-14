@@ -107,7 +107,7 @@ pub fn routes(state: AppState) -> Router {
     Router::new()
         .route("/power-status", get(power_status))
         .route("/power-on", post(power_on))
-        //.route("/power-off", post(power_off))
+        .route("/power-off", post(power_off))
         .layer(Extension(state))
 }
 
@@ -142,6 +142,20 @@ async fn power_on(
         .ok_or(UnifiError::MachineNotFound(system_id.to_string()))?;
     let device_id = handler.device_id(&mac).await?;
     Ok(handler.power_on(&device_id, machine.port_id).await?)
+}
+
+async fn power_off(
+    Extension(AppState { config, handler }): Extension<AppState>,
+    ExtractSystemId(system_id): ExtractSystemId,
+) -> Result<(), AppError> {
+    let mac = config
+        .owning_device_mac(&system_id)
+        .ok_or(UnifiError::DeviceNotFound(system_id.to_owned()))?;
+    let machine = config
+        .machine(&system_id)
+        .ok_or(UnifiError::MachineNotFound(system_id.to_string()))?;
+    let device_id = handler.device_id(&mac).await?;
+    Ok(handler.power_off(&device_id, machine.port_id).await?)
 }
 
 #[cfg(test)]
@@ -253,6 +267,31 @@ mod test {
         let request = Request::builder()
             .method(Method::POST)
             .uri("/power-on")
+            .header(MAAS_SYSTEM_ID_HEADER, MAAS_SYSTEM_ID)
+            .body(Body::empty())
+            .unwrap();
+        let response = routes(state).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn should_power_off() {
+        let config = Box::leak(Box::new(Config {
+            url: "".to_owned(),
+            devices: vec![config::Device {
+                mac: MacAddress::from_str(UNIFI_DEVICE_MAC).unwrap(),
+                machines: vec![Machine {
+                    maas_id: MAAS_SYSTEM_ID.to_owned(),
+                    port_id: MACHINE_PORT,
+                }],
+            }],
+        }));
+        let client = Box::new(FakeUnifi {});
+        let handler = UnifiHandler { client };
+        let state = AppState { config, handler };
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/power-off")
             .header(MAAS_SYSTEM_ID_HEADER, MAAS_SYSTEM_ID)
             .body(Body::empty())
             .unwrap();

@@ -18,6 +18,14 @@ impl UnifiHandler {
             .map_err(|e| UnifiError::FailedToPowerOn(e.to_string()))
     }
 
+    pub async fn power_off(&self, device_id: &DeviceId, port_id: usize) -> Result<(), UnifiError> {
+        self.client
+            .power_off(&device_id.to_string(), port_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| UnifiError::FailedToPowerOn(e.to_string()))
+    }
+
     // Given a device mac, return the ID in the unifi controller
     pub async fn device_id(&self, device_mac: &MacAddress) -> Result<DeviceId, UnifiError> {
         let response = self
@@ -168,6 +176,26 @@ mod test {
         let handler = UnifiHandler { client };
         let result = handler
             .power_on(&DeviceId::new(UNIFI_DEVICE_ID), MACHINE_PORT)
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn should_power_off() {
+        let client = Box::new(FakeUnifiClient {});
+        let handler = UnifiHandler { client };
+        handler
+            .power_off(&DeviceId::new(UNIFI_DEVICE_ID), MACHINE_PORT)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_error_if_power_off_fails() {
+        let client = Box::new(FailingUnifiClient {});
+        let handler = UnifiHandler { client };
+        let result = handler
+            .power_off(&DeviceId::new(UNIFI_DEVICE_ID), MACHINE_PORT)
             .await;
         assert!(result.is_err());
     }
